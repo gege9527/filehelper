@@ -1,0 +1,6 @@
+data/
+config.json
+*.log
+.migrating.json
+node_modules/
+.DS_Store

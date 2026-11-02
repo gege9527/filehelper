@@ -1,0 +1,16 @@
+[Unit]
+Description=FileHelper transfer station
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/disk/filehelper
+ExecStart=/root/.nvm/versions/node/v24.22.1/bin/node /mnt/disk/filehelper/app/server.mjs
+Restart=always
+RestartSec=3
+StandardOutput=append:/mnt/disk/logs/filehelper.log
+StandardError=append:/mnt/disk/logs/filehelper.log
+
+[Install]
+WantedBy=multi-user.target

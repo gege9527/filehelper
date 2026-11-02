@@ -1,0 +1,9 @@
+{
+  "port": 3100,
+  "host": "0.0.0.0",
+  "dataDir": "./data",
+  "allowIps": [],
+  "chunkSizeMB": 16,
+  "partTtlHours": 24,
+  "partQuotaGB": 50
+}
