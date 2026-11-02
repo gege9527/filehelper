@@ -6,6 +6,12 @@
 
 适合放在家里的 NAS、树莓派或小主机上，只在局域网或 Tailscale 内使用。
 
+<p align="center">
+  <img src="docs/screenshot-light.png" width="320" alt="浅色模式">
+  &nbsp;&nbsp;
+  <img src="docs/screenshot-dark.png" width="320" alt="深色模式">
+</p>
+
 ## 特性
 
 **传输**
