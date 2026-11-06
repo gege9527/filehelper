@@ -274,6 +274,7 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
   <div class="selbar" id="selbar">
     <span id="selInfo">已选 0 项</span>
     <div style="display:flex;gap:8px">
+      <button id="btnSelAll" class="sbtn" type="button">全选</button>
       <button id="btnSelCancel" class="sbtn" type="button">取消</button>
       <button id="btnSelDel" class="sbtn danger" type="button"></button>
     </div>
@@ -325,10 +326,6 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
       <textarea id="setIps" rows="5" spellcheck="false" placeholder="192.168.5.0/24"></textarea>
       <button id="btnSave" class="btn">保存</button>
     </div>
-    <div class="sec">
-      <h3>危险操作</h3>
-      <button id="btnSettingsClear" class="btn danger">清空全部消息</button>
-    </div>
   </div>
 </div>
 
@@ -351,7 +348,7 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
 <script>
 (function(){
 var $ = function(id){ return document.getElementById(id); };
-var S = { items: [], keys: {}, cursor: null, hasMore: true, loading: false, selectMode: false, selected: {}, device: "", locked: false, settings: null };
+var S = { items: [], keys: {}, cursor: null, hasMore: true, loading: false, selectMode: false, selected: {}, selectAll: false, device: "", locked: false, settings: null };
 var stream = $("stream");
 var input = $("input");
 var queue = [];
@@ -860,6 +857,7 @@ function pickHandler(ev){
   var node = ev.currentTarget;
   var key = node.getAttribute("data-key");
   if (!key) return;
+  if (S.selectAll) { toast("已全选，先点「取消全选」再单选"); return; }
   if (S.selected[key]) { delete S.selected[key]; node.classList.remove("picked"); }
   else { S.selected[key] = true; node.classList.add("picked"); }
   $("selInfo").textContent = "已选 " + Object.keys(S.selected).length + " 项";
@@ -867,8 +865,10 @@ function pickHandler(ev){
 function enterSelect(){
   S.selectMode = true;
   S.selected = {};
+  S.selectAll = false;
   $("selbar").className = "selbar on";
   $("btnSelect").innerHTML = svg("check");
+  $("btnSelAll").textContent = "全选";
   $("selInfo").textContent = "已选 0 项";
   Array.prototype.forEach.call(stream.children, function(node){
     node.classList.add("pick");
@@ -878,6 +878,8 @@ function enterSelect(){
 function exitSelect(){
   S.selectMode = false;
   S.selected = {};
+  S.selectAll = false;
+  $("btnSelAll").textContent = "全选";
   $("selbar").className = "selbar";
   $("btnSelect").innerHTML = svg("select");
   Array.prototype.forEach.call(stream.children, function(node){
@@ -885,6 +887,18 @@ function exitSelect(){
     node.classList.remove("picked");
     node.removeEventListener("click", pickHandler);
   });
+}
+function toggleSelectAll(){
+  if (!S.selectMode) return;
+  S.selectAll = !S.selectAll;
+  S.selected = {};
+  var nodes = Array.prototype.slice.call(stream.children);
+  nodes.forEach(function(node){
+    if (S.selectAll && node.getAttribute("data-key")) node.classList.add("picked");
+    else node.classList.remove("picked");
+  });
+  $("btnSelAll").textContent = S.selectAll ? "取消全选" : "全选";
+  $("selInfo").textContent = S.selectAll ? "已全选 · 全部消息" : "已选 0 项";
 }
 function modal(opts){
   return new Promise(function(resolve){
@@ -939,12 +953,13 @@ function doDelete(keys, cb){
   });
 }
 function doClear(){
-  modal({ title: "清空全部", text: "将删除所有消息和文件，不可恢复。\n输入「清空」确认，或点右侧按钮直接填入。", needInput: "清空", danger: true, okText: "清空" }).then(function(ok){
+  modal({ title: "清空全部", text: "全选删除会清空所有消息和文件，不可恢复。\n输入「清空」确认，或点右侧按钮直接填入。", needInput: "清空", danger: true, okText: "清空" }).then(function(ok){
     if (!ok) return;
     api("POST", "/api/clear", {}).then(function(r){
       if (!r.ok) { toast("清空失败"); return; }
       stream.innerHTML = "";
       S.keys = {}; S.items = []; S.cursor = null; S.hasMore = true; nodeMap = {};
+      exitSelect();
       toast("已清空");
       loadPage();
     });
@@ -1042,8 +1057,13 @@ input.addEventListener("keydown", function(e){
 });
 $("btnSelect").addEventListener("click", function(){ if (S.selectMode) exitSelect(); else enterSelect(); });
 $("btnSelCancel").addEventListener("click", exitSelect);
-$("btnSelDel").addEventListener("click", function(){ var keys = Object.keys(S.selected); if (!keys.length) { toast("没有选中"); return; } doDelete(keys, function(ok){ if (ok) exitSelect(); }); });
-$("btnSettingsClear").addEventListener("click", function(){ closeDrawer(); doClear(); });
+$("btnSelAll").addEventListener("click", toggleSelectAll);
+$("btnSelDel").addEventListener("click", function(){
+  if (S.selectAll) { doClear(); return; }
+  var keys = Object.keys(S.selected);
+  if (!keys.length) { toast("没有选中"); return; }
+  doDelete(keys, function(ok){ if (ok) exitSelect(); });
+});
 $("btnSettings").addEventListener("click", openDrawer);
 $("btnCloseSettings").addEventListener("click", closeDrawer);
 $("drawer").addEventListener("click", function(e){ if (e.target === $("drawer")) closeDrawer(); });
