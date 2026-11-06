@@ -22,7 +22,8 @@ const DEFAULT_CONFIG = {
   allowIps: [],
   chunkSizeMB: 16,
   partTtlHours: 24,
-  partQuotaGB: 50
+  partQuotaGB: 50,
+  totalQuotaGB: 200
 };
 
 let config = Object.assign({}, DEFAULT_CONFIG);
@@ -471,6 +472,11 @@ async function apiInit(req, res) {
       }
     }
   }
+  const quota = (Number(config.totalQuotaGB) || 200) * 1024 * 1024 * 1024;
+  if (size > 0) {
+    const used = usageStats().bytes;
+    if (used + size > quota) return json(res, 507, { error: 'quota_exceeded', used: used, quota: quota, need: size });
+  }
   const disk = await diskInfo(dataDir());
   if (size > 0 && disk.free > 0 && size > disk.free - 256 * 1024 * 1024) {
     return json(res, 507, { error: 'no_space', free: disk.free, need: size });
@@ -657,6 +663,7 @@ async function apiSettingsGet(req, res) {
     chunkSizeMB: Number(config.chunkSizeMB) || 8,
     partTtlHours: Number(config.partTtlHours) || 24,
     partQuotaGB: Number(config.partQuotaGB) || 50,
+    totalQuotaGB: Number(config.totalQuotaGB) || 200,
     selfIp: clientIp(req),
     disk: disk,
     usage: usage,
@@ -697,6 +704,7 @@ async function apiSettingsPut(req, res) {
   if (body.chunkSizeMB !== undefined) config.chunkSizeMB = Math.min(Math.max(Number(body.chunkSizeMB) || 8, 1), 64);
   if (body.partTtlHours !== undefined) config.partTtlHours = Math.min(Math.max(Number(body.partTtlHours) || 24, 1), 720);
   if (body.partQuotaGB !== undefined) config.partQuotaGB = Math.min(Math.max(Number(body.partQuotaGB) || 50, 1), 400);
+  if (body.totalQuotaGB !== undefined) config.totalQuotaGB = Math.min(Math.max(Number(body.totalQuotaGB) || 200, 1), 1000);
   const dirChanged = newDir !== dataDir();
   if (!dirChanged || body.forceDirOnly) {
     config.dataDir = newDir;

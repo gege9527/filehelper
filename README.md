@@ -78,6 +78,7 @@ node app/server.mjs
 | chunkSizeMB | 上传分片大小，1–64 |
 | partTtlHours | 未完成上传的临时文件保留小时数，1–720 |
 | partQuotaGB | 临时文件总量上限，超出从最旧的删，1–400 |
+| totalQuotaGB | 已完成文件总量上限，超出拒绝新上传，1–1000 |
 
 设置页的改动立即生效并写回文件。
 

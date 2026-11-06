@@ -316,6 +316,7 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
         <div><label class="lbl">分片大小 MB</label><input id="setChunk" type="number" min="1" max="64"></div>
         <div><label class="lbl">临时保留 小时</label><input id="setTtl" type="number" min="1" max="720"></div>
         <div><label class="lbl">临时配额 GB</label><input id="setQuota" type="number" min="1" max="400"></div>
+        <div><label class="lbl">总量上限 GB</label><input id="setTotal" type="number" min="1" max="1000"></div>
       </div>
     </div>
     <div class="sec">
@@ -766,7 +767,10 @@ function uploadOne(file){
   var kind = kindOf(file);
   var fp = fingerprint(file);
   return api("POST", "/api/upload/init", { name: file.name, kind: kind, size: file.size, device: S.device, fingerprint: fp }).then(function(r){
-    if (!r.ok) throw new Error(r.data && r.data.error === "no_space" ? "磁盘空间不足" : "初始化失败");
+    if (!r.ok) {
+      if (r.data && r.data.error === "quota_exceeded") throw new Error("超出总量上限 " + Math.round(r.data.quota / 1073741824) + " GB，请先清理旧文件");
+      throw new Error(r.data && r.data.error === "no_space" ? "磁盘空间不足" : "初始化失败");
+    }
     var id = r.data.uploadId;
     var total = file.size;
     var next = Number(r.data.offset) || 0;
@@ -964,9 +968,10 @@ function loadSettings(){
     if (document.activeElement !== $("setChunk")) $("setChunk").value = d.chunkSizeMB || 8;
     if (document.activeElement !== $("setTtl")) $("setTtl").value = d.partTtlHours || 24;
     if (document.activeElement !== $("setQuota")) $("setQuota").value = d.partQuotaGB || 50;
+    if (document.activeElement !== $("setTotal")) $("setTotal").value = d.totalQuotaGB || 200;
     $("stIp").textContent = d.selfIp || "-";
     $("stDisk").textContent = fmtSize(d.disk.used) + " / " + fmtSize(d.disk.total) + "（可用 " + fmtSize(d.disk.free) + "）";
-    $("stUsage").textContent = fmtSize(d.usage.bytes) + " · " + d.usage.files + " 个";
+    $("stUsage").textContent = fmtSize(d.usage.bytes) + " / " + fmtSize((d.totalQuotaGB || 200) * 1073741824) + " · " + d.usage.files + " 个";
     var bars = $("kindBars");
     bars.innerHTML = "";
     var maxB = 1;
@@ -993,7 +998,8 @@ function saveSettings(force){
     allowIps: $("setIps").value,
     chunkSizeMB: Number($("setChunk").value),
     partTtlHours: Number($("setTtl").value),
-    partQuotaGB: Number($("setQuota").value)
+    partQuotaGB: Number($("setQuota").value),
+    totalQuotaGB: Number($("setTotal").value)
   };
   if (force) body.force = true;
   api("PUT", "/api/settings", body).then(function(r){
