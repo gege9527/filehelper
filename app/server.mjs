@@ -446,9 +446,11 @@ async function cleanupParts() {
   for (const u of state.uploads.values()) total += Number(u.size || 0);
   const quota = (Number(config.partQuotaGB) || 50) * 1024 * 1024 * 1024;
   if (total > quota) {
+    const activeCut = now - 30 * 60 * 1000;
     const arr = Array.from(state.uploads.entries()).sort(function (a, b) { return Number(a[1].lastActive || 0) - Number(b[1].lastActive || 0); });
     for (const entry of arr) {
       if (total <= quota) break;
+      if (Number(entry[1].lastActive || 0) > activeCut) continue;
       total -= Number(entry[1].size || 0);
       await removeUpload(entry[0]);
     }
