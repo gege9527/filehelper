@@ -257,6 +257,36 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
 
 .toast{position:fixed;left:50%;bottom:96px;transform:translate(-50%,8px);background:var(--toast-bg);color:#fff;font-size:13px;padding:9px 16px;border-radius:10px;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:50;max-width:80%;text-align:center;backdrop-filter:blur(8px)}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- motion ---------- */
+@media (prefers-reduced-motion: no-preference){
+  .msg.anim{animation:msgIn .34s cubic-bezier(.22,.9,.3,1) both}
+}
+@keyframes msgIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+.msg.out{animation:msgOut .2s cubic-bezier(.4,0,1,1) both;pointer-events:none}
+@keyframes msgOut{to{opacity:0;transform:translateX(-10px) scale(.96)}}
+.bubble{transition:background .2s,color .2s,border-color .2s,box-shadow .18s ease}
+.msg.picked .bubble{outline:0;box-shadow:0 0 0 2px var(--brand)}
+.bubble.img img{opacity:0;transition:opacity .3s ease,transform .22s ease,box-shadow .22s}
+.bubble.img img.loaded{opacity:1}
+.card{transition:transform .16s ease}
+.card:hover{transform:translateY(-1px)}
+.prog i{transition:width .16s linear}
+.act.done{color:var(--brand);background:var(--brand-soft)}
+@keyframes pop{0%{transform:scale(1)}45%{transform:scale(.88)}100%{transform:scale(1)}}
+.send.pop{animation:pop .32s cubic-bezier(.34,1.56,.64,1)}
+.skel .meta{width:54px;height:10px;border-radius:5px;background:var(--surface-2)}
+.skel .bubble{height:50px;background:var(--surface-2);border-color:transparent;box-shadow:none;position:relative;overflow:hidden}
+.skel .bubble::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(127,140,160,.16),transparent);animation:shimmer 1.15s infinite}
+@keyframes shimmer{to{transform:translateX(100%)}}
+.empty{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:0 24px 64px;pointer-events:none;opacity:0;transition:opacity .32s ease;color:var(--sub);text-align:center}
+.empty.on{opacity:1}
+.empty svg{opacity:.4;margin-bottom:2px}
+.empty b{font-weight:400;font-size:14px;color:var(--text-2)}
+.empty i{font-style:normal;font-size:12px;line-height:1.6}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
 </style>
 </head>
 <body>
@@ -271,6 +301,7 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
   </header>
   <div class="banner" id="banner"></div>
   <main class="stream" id="stream"></main>
+  <div class="empty" id="empty"></div>
   <div class="selbar" id="selbar">
     <span id="selInfo">已选 0 项</span>
     <div style="display:flex;gap:8px">
@@ -381,6 +412,8 @@ var ICONS = {
   check: '<path d="M5 12.6l4.4 4.4L19 7.4"/>',
   gear: '<path d="M4 7h8.2M17.6 7H20M4 12h3.2M11.4 12H20M4 17h8.2M17.6 17H20"/><circle cx="14.7" cy="7" r="2.1"/><circle cx="8.6" cy="12" r="2.1"/><circle cx="14.7" cy="17" r="2.1"/>',
   download: '<path d="M12 4.6v10.6M7.4 10.6 12 15.2l4.6-4.6M4.8 19.4h14.4"/>',
+  send: '<path d="M4.6 11.4 19.4 5.2 13.6 20l-2.4-6.4Z"/>',
+  inbox: '<path d="M4.5 13.2 7 5.7A2 2 0 0 1 8.9 4.3h6.2a2 2 0 0 1 1.9 1.4l2.5 7.5"/><path d="M4.5 13.2h4l1 2.1h5l1-2.1h4v4a2.1 2.1 0 0 1-2.1 2.1H6.6a2.1 2.1 0 0 1-2.1-2.1Z"/>',
   trash: '<path d="M4.6 7h14.8M9.6 7V5.6A1.6 1.6 0 0 1 11.2 4h1.6a1.6 1.6 0 0 1 1.6 1.6V7M6.6 7l.8 12.1A1.5 1.5 0 0 0 8.9 20.5h6.2a1.5 1.5 0 0 0 1.5-1.4L17.4 7"/>'
 };
 function svg(name, size){
@@ -461,9 +494,11 @@ function detectDevice(){
   }
   return d;
 }
-function renderItem(it, animate){
+function renderItem(it, animate, delay){
+  var stick = nearBottom(600);
   var wrap = document.createElement("div");
   wrap.className = "msg" + (it.device === S.device ? " own" : "") + (animate ? " anim" : "");
+  if (animate && delay) wrap.style.animationDelay = delay + "ms";
   wrap.setAttribute("data-key", it.key);
   var col = document.createElement("div");
   col.className = "col";
@@ -480,6 +515,8 @@ function renderItem(it, animate){
     img.decoding = "async";
     img.alt = it.title;
     img.onerror = function(){ b.className = "bubble"; b.innerHTML = ""; b.appendChild(fileCard(it)); };
+    img.addEventListener("load", function(){ img.classList.add("loaded"); if (stick) scrollToBottom(); });
+    if (img.complete && img.naturalWidth) img.classList.add("loaded");
     img.addEventListener("click", function(ev){
       if (S.selectMode) return;
       ev.stopPropagation();
@@ -505,7 +542,13 @@ function renderItem(it, animate){
     op.addEventListener("click", function(ev){
       ev.stopPropagation();
       var txt = it.content != null ? it.content : (it.title || "");
-      copyText(txt).then(function(ok){ toast(ok ? "已复制" : "复制失败"); });
+      copyText(txt).then(function(ok){
+        toast(ok ? "已复制" : "复制失败");
+        if (!ok) return;
+        op.classList.add("done");
+        op.innerHTML = svg("check", 15);
+        setTimeout(function(){ op.classList.remove("done"); op.innerHTML = svg("copy", 15); }, 900);
+      });
     });
   } else {
     op.title = "下载";
@@ -580,22 +623,45 @@ function addItem(it, toBottom){
   if (toBottom) scrollToBottom();
   trimNodes();
 }
-function scrollToBottom(){ stream.scrollTop = stream.scrollHeight; }
-function nearBottom(){ return stream.scrollHeight - stream.scrollTop - stream.clientHeight < 140; }
+function scrollToBottom(){
+  stream.scrollTop = stream.scrollHeight;
+  requestAnimationFrame(function(){ stream.scrollTop = stream.scrollHeight; });
+}
+function nearBottom(pad){ return stream.scrollHeight - stream.scrollTop - stream.clientHeight < (pad || 140); }
+function showSkel(n){
+  hideSkel();
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < n; i++) {
+    var d = document.createElement("div");
+    d.className = "msg skel";
+    var col = document.createElement("div"); col.className = "col";
+    var em = document.createElement("div"); em.className = "meta";
+    var body = document.createElement("div"); body.className = "body";
+    var bub = document.createElement("div"); bub.className = "bubble";
+    body.appendChild(bub); col.appendChild(em); col.appendChild(body); d.appendChild(col);
+    frag.appendChild(d);
+  }
+  stream.appendChild(frag);
+}
+function hideSkel(){
+  Array.prototype.forEach.call(stream.querySelectorAll(".skel"), function(n){ if (n.parentNode) n.parentNode.removeChild(n); });
+}
 function loadPage(){
   if (S.loading || !S.hasMore) return;
   S.loading = true;
+  if (!stream.querySelector(".msg:not(.skel)")) showSkel(3);
   var url = "/api/items?limit=30";
   if (S.cursor) url += "&cursor=" + encodeURIComponent(S.cursor);
   api("GET", url).then(function(r){
     S.loading = false;
+    hideSkel();
     if (!r.ok) { toast("加载失败"); return; }
     var d = r.data || {};
     S.hasMore = !!d.hasMore;
     S.cursor = d.nextCursor || null;
     var list = (d.items || []).slice().reverse();
     if (S.items.length === 0) {
-      list.forEach(function(it){ if (S.keys[it.key]) return; S.keys[it.key] = true; S.items.push(it); var nd = renderItem(it); nodeMap[it.key] = nd; stream.appendChild(nd); });
+      list.forEach(function(it, i){ if (S.keys[it.key]) return; S.keys[it.key] = true; S.items.push(it); var nd = renderItem(it, true, Math.min(i, 10) * 32); nodeMap[it.key] = nd; stream.appendChild(nd); });
       scrollToBottom();
     } else {
       var before = stream.scrollHeight;
@@ -625,7 +691,7 @@ function connect(){
     else if (msg.type === "del") {
       (msg.keys || []).forEach(function(k){
         var el = nodeMap[k];
-        if (el && el.parentNode) el.parentNode.removeChild(el);
+        dropNode(el);
         delete nodeMap[k];
         delete S.keys[k];
       });
@@ -674,6 +740,8 @@ function sendText(){
   api("POST", "/api/text", { content: v, device: S.device }).then(function(r){
     if (!r.ok) { toast("发送失败"); return; }
     if (r.data && r.data.item) addItem(Object.assign({ content: v }, r.data.item), true);
+    var sb = $("btnSend");
+    sb.classList.remove("pop"); void sb.offsetWidth; sb.classList.add("pop");
   });
 }
 function autoGrow(){
@@ -933,6 +1001,13 @@ function modal(opts){
     $("mCancel").onclick = function(){ done(false); };
   });
 }
+function dropNode(el){
+  if (!el) return;
+  el.classList.add("out");
+  var fin = function(){ if (el.parentNode) el.parentNode.removeChild(el); };
+  el.addEventListener("animationend", fin, { once: true });
+  setTimeout(fin, 240);
+}
 function doDelete(keys, cb){
   if (!keys.length) return;
   modal({ title: "删除", text: "删除 " + keys.length + " 条消息及其文件，不可恢复。", danger: true, okText: "删除" }).then(function(ok){
@@ -944,7 +1019,7 @@ function doDelete(keys, cb){
       (r.data.results || []).forEach(function(x){
         if (!x.ok) { fail += 1; return; }
         var el = nodeMap[x.key];
-        if (el && el.parentNode) el.parentNode.removeChild(el);
+        dropNode(el);
         delete nodeMap[x.key];
         delete S.keys[x.key];
       });
@@ -1093,6 +1168,16 @@ $("btnSettings").innerHTML = svg("gear");
 $("btnSelect").innerHTML = svg("select");
 $("btnCloseSettings").innerHTML = svg("close", 16);
 $("btnSelDel").innerHTML = svg("trash", 14) + "<span>删除</span>";
+var emptyEl = $("empty");
+var emptyObserver = new MutationObserver(function(){
+  if (!emptyEl) return;
+  var has = stream.querySelector(".msg:not(.skel)");
+  var loading = stream.querySelector(".skel");
+  var show = !has && !loading;
+  if (show && !emptyEl.firstChild) emptyEl.innerHTML = svg("inbox", 40) + "<b>还没有消息</b><i>拖入文件、粘贴图片，或直接发一句话</i>";
+  emptyEl.className = "empty" + (show ? " on" : "");
+});
+emptyObserver.observe(stream, { childList: true });
 applyTheme(currentTheme());
 loadPage();
 connect();
