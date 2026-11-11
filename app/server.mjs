@@ -302,7 +302,8 @@ const MIME = {
   '.webm': 'video/webm', '.mkv': 'video/x-matroska',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav',
   '.ogg': 'audio/ogg', '.flac': 'audio/flac',
-  '.pdf': 'application/pdf', '.zip': 'application/zip'
+  '.pdf': 'application/pdf', '.zip': 'application/zip',
+  '.apk': 'application/vnd.android.package-archive'
 };
 function mimeOf(name) {
   const i = name.lastIndexOf('.');
@@ -359,10 +360,11 @@ async function serveFile(req, res, url, kind, name) {
   try { st = await fsp.stat(file); } catch (e) { return json(res, 404, { error: 'not_found' }); }
   if (!st.isFile()) return json(res, 404, { error: 'not_found' });
   const download = url.searchParams.get('dl') === '1';
+  const isApk = /\.apk$/i.test(name);
   const headers = {
-    'Content-Type': download ? 'application/octet-stream' : mimeOf(name),
+    'Content-Type': (download && !isApk) ? 'application/octet-stream' : mimeOf(name),
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'private, max-age=86400',
+    'Cache-Control': download ? 'no-store' : 'private, max-age=86400',
     'Last-Modified': new Date(st.mtimeMs).toUTCString()
   };
   if (download) {
