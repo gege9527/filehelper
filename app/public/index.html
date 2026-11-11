@@ -474,6 +474,9 @@ function legacyCopy(txt){
   document.body.removeChild(ta);
   return ok;
 }
+function downloadUrl(it){
+  return location.origin + "/f/" + it.kind + "/" + encodeURIComponent(it.name) + "?dl=1";
+}
 function downloadItem(it){
   var url = "/f/" + it.kind + "/" + encodeURIComponent(it.name) + "?dl=1";
   fetch(url, { method: "HEAD", cache: "no-store" }).then(function(r){
@@ -621,9 +624,23 @@ function fileCard(it){
   body.appendChild(sz);
   card.appendChild(tag);
   card.appendChild(body);
+  var pressTimer = null;
+  var longPressed = false;
+  card.addEventListener("touchstart", function(){
+    longPressed = false;
+    pressTimer = setTimeout(function(){
+      longPressed = true;
+      copyText(downloadUrl(it)).then(function(ok){
+        toast(ok ? "直链已复制，可粘贴到其他浏览器下载" : "复制失败");
+      });
+    }, 700);
+  }, { passive: true });
+  card.addEventListener("touchmove", function(){ clearTimeout(pressTimer); }, { passive: true });
+  card.addEventListener("touchend", function(){ clearTimeout(pressTimer); });
   card.addEventListener("click", function(ev){
     if (S.selectMode) return;
     ev.stopPropagation();
+    if (longPressed) { longPressed = false; return; }
     downloadItem(it);
   });
   return card;
