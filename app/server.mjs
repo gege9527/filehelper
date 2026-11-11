@@ -368,9 +368,10 @@ async function serveFile(req, res, url, kind, name) {
     'Last-Modified': new Date(st.mtimeMs).toUTCString()
   };
   if (download) {
+    console.log('[download] ' + kind + '/' + name + ' size=' + st.size + ' range=' + (req.headers.range || '-') + ' ua=' + String(req.headers['user-agent'] || '').slice(0, 90));
     const parsed = parseName(name);
     const fn = parsed ? parsed.title : name;
-    headers['Content-Disposition'] = 'attachment; filename="' + asciiFileName(fn) + '"; filename*=UTF-8\'\'' + encodeURIComponent(fn);
+    headers['Content-Disposition'] = 'attachment; filename="' + asciiFileName(fn) + '"';
   }
   const range = req.headers.range;
   if (range && range.startsWith('bytes=')) {
