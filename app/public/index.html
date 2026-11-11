@@ -271,6 +271,8 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
 .bubble.img img{opacity:0;transition:opacity .3s ease,transform .22s ease,box-shadow .22s}
 .bubble.img img.loaded{opacity:1}
 .card{transition:transform .16s ease}
+.msg.downloaded .csize::after{content:" · 已下载";color:var(--brand-dark)}
+.msg.downloaded .ops .act[data-dl]{color:var(--brand)}
 .card:hover{transform:translateY(-1px)}
 .prog i{transition:width .16s linear}
 .act.done{color:var(--brand);background:var(--brand-soft)}
@@ -474,6 +476,23 @@ function legacyCopy(txt){
   document.body.removeChild(ta);
   return ok;
 }
+var DL_STORE = "fh_downloaded";
+function downloadedMap(){
+  try { var o = JSON.parse(localStorage.getItem(DL_STORE) || "{}"); return (o && typeof o === "object") ? o : {}; } catch (e) { return {}; }
+}
+function isDownloaded(it){ return !!downloadedMap()[it.key]; }
+function markDownloaded(it){
+  var d = downloadedMap();
+  d[it.key] = Date.now();
+  var keys = Object.keys(d);
+  if (keys.length > 400) {
+    keys.sort(function(a, b){ return (d[a] || 0) - (d[b] || 0); });
+    keys.slice(0, keys.length - 400).forEach(function(k){ delete d[k]; });
+  }
+  try { localStorage.setItem(DL_STORE, JSON.stringify(d)); } catch (e) {}
+  var node = nodeMap[it.key];
+  if (node) node.classList.add("downloaded");
+}
 function downloadUrl(it){
   return location.origin + "/f/" + it.kind + "/" + encodeURIComponent(it.name) + "?dl=1";
 }
@@ -487,6 +506,7 @@ function downloadItem(it){
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    markDownloaded(it);
     var len = Number(r.headers.get("Content-Length") || 0);
     toast(len ? "开始下载 " + fmtSize(len) : "开始下载");
   }).catch(function(){
@@ -526,6 +546,7 @@ function renderItem(it, animate, delay){
   var stick = nearBottom(600);
   var wrap = document.createElement("div");
   wrap.className = "msg" + (it.device === S.device ? " own" : "") + (animate ? " anim" : "");
+  if (it.kind !== "text" && isDownloaded(it)) wrap.classList.add("downloaded");
   if (animate && delay) wrap.style.animationDelay = delay + "ms";
   wrap.setAttribute("data-key", it.key);
   var col = document.createElement("div");
@@ -581,6 +602,7 @@ function renderItem(it, animate, delay){
   } else {
     op.title = "下载";
     op.innerHTML = svg("download", 15);
+    op.setAttribute("data-dl", "1");
     op.addEventListener("click", function(ev){
       ev.stopPropagation();
       downloadItem(it);
