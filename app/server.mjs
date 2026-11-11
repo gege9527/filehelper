@@ -342,6 +342,15 @@ async function serveIndex(req, res) {
   res.end(uiCache.buf);
 }
 
+function asciiFileName(name) {
+  const raw = String(name || 'file');
+  const m = raw.match(/\.[A-Za-z0-9]{1,8}$/);
+  const ext = m ? m[0] : '';
+  const base = m ? raw.slice(0, raw.length - ext.length) : raw;
+  let safe = base.replace(/[^\x20-\x7e]/g, '').replace(/["\\;\/]/g, '').trim();
+  if (!safe) safe = 'file';
+  return safe + ext;
+}
 async function serveFile(req, res, url, kind, name) {
   if (KINDS.indexOf(kind) < 0) return json(res, 404, { error: 'bad_kind' });
   if (!name || name.indexOf('/') >= 0 || name.indexOf('..') >= 0) return json(res, 404, { error: 'bad_name' });
@@ -359,7 +368,7 @@ async function serveFile(req, res, url, kind, name) {
   if (download) {
     const parsed = parseName(name);
     const fn = parsed ? parsed.title : name;
-    headers['Content-Disposition'] = 'attachment; filename*=UTF-8\'\'' + encodeURIComponent(fn);
+    headers['Content-Disposition'] = 'attachment; filename="' + asciiFileName(fn) + '"; filename*=UTF-8\'\'' + encodeURIComponent(fn);
   }
   const range = req.headers.range;
   if (range && range.startsWith('bytes=')) {

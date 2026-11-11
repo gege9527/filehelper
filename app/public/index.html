@@ -111,6 +111,7 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
 
 .banner{display:none;flex:none;padding:9px 18px;background:var(--warn-bg);color:var(--warn-text);font-size:12px;line-height:1.5;border-bottom:1px solid var(--warn-line)}
 .banner.on{display:block;animation:slideDown .2s ease-out}
+.banner.conn{background:var(--danger-soft);color:var(--danger);border-bottom-color:var(--danger-line)}
 @keyframes slideDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 
 .stream{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 18px 18px;background:var(--stream);-webkit-overflow-scrolling:touch;transition:background .2s}
@@ -316,6 +317,7 @@ body{background:var(--bg);color:var(--text);font:400 14px/1.5 -apple-system,Blin
     </div>
   </header>
   <div class="banner" id="banner"></div>
+  <div class="banner conn" id="connBar">连接已断开，正在重连…</div>
   <main class="stream" id="stream"></main>
   <div class="empty" id="empty"></div>
   <div class="selbar" id="selbar">
@@ -473,12 +475,20 @@ function legacyCopy(txt){
   return ok;
 }
 function downloadItem(it){
-  var a = document.createElement("a");
-  a.href = "/f/" + it.kind + "/" + encodeURIComponent(it.name) + "?dl=1";
-  a.download = it.title || it.name;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  var url = "/f/" + it.kind + "/" + encodeURIComponent(it.name) + "?dl=1";
+  fetch(url, { method: "HEAD", cache: "no-store" }).then(function(r){
+    if (!r.ok) { toast("下载失败：文件不存在或已被删除（" + r.status + "）"); return; }
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = it.title || it.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    var len = Number(r.headers.get("Content-Length") || 0);
+    toast(len ? "开始下载 " + fmtSize(len) : "开始下载");
+  }).catch(function(){
+    toast("下载失败：无法连接服务器");
+  });
 }
 function copyText(txt){
   if (navigator.clipboard && window.isSecureContext) {
@@ -696,8 +706,35 @@ stream.addEventListener("scroll", function(){
     if (stream.scrollTop < 80 && S.hasMore && !S.loading) loadPage();
   });
 }, { passive: true });
+var connEs = null;
+var connDown = false;
+var lastSync = 0;
+function setConnDown(v){
+  if (connDown === v) return;
+  connDown = v;
+  var b = $("connBar");
+  if (b) b.className = "banner conn" + (v ? " on" : "");
+}
+function refreshList(force){
+  if (!force && Date.now() - lastSync < 1200) return;
+  lastSync = Date.now();
+  var keep = [];
+  Array.prototype.forEach.call(stream.children, function(n){ if (n.getAttribute("data-up")) keep.push(n); });
+  stream.innerHTML = "";
+  keep.forEach(function(n){ stream.appendChild(n); });
+  S.keys = {}; S.items = []; S.cursor = null; S.hasMore = true; nodeMap = {};
+  loadPage();
+}
 function connect(){
+  if (connEs) { try { connEs.close(); } catch (e) {} }
   var es = new EventSource("/api/events");
+  connEs = es;
+  es.onopen = function(){
+    var wasDown = connDown;
+    setConnDown(false);
+    if (wasDown) refreshList(true);
+  };
+  es.onerror = function(){ setConnDown(true); };
   es.onmessage = function(ev){
     var msg = null;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
@@ -719,6 +756,11 @@ function connect(){
     }
   };
 }
+document.addEventListener("visibilitychange", function(){
+  if (document.hidden) return;
+  refreshList(false);
+  if (!connEs || connEs.readyState !== 1) connect();
+});
 function updateMigrate(m){
   var b = $("banner");
   if (!m) { b.className = "banner"; b.textContent = ""; return; }
@@ -783,6 +825,7 @@ function fingerprint(file){
 function tempNode(name, size, onCancel){
   var wrap = document.createElement("div");
   wrap.className = "msg own";
+  wrap.setAttribute("data-up", "1");
   var col = document.createElement("div");
   col.className = "col";
   var meta = document.createElement("div");
