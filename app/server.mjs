@@ -104,6 +104,20 @@ function parseName(name) {
   return { ts: Number.isFinite(ts) ? ts : 0, rand, device, title: title || name };
 }
 
+function withCopySuffix(title, n) {
+  const dot = title.lastIndexOf('.');
+  if (dot > 0) return title.slice(0, dot) + ' (' + n + ')' + title.slice(dot);
+  return title + ' (' + n + ')';
+}
+function uniqueTitle(kind, title) {
+  const taken = new Set();
+  for (const it of state.index.values()) if (it.kind === kind) taken.add(it.title);
+  if (!taken.has(title)) return title;
+  let n = 1;
+  while (taken.has(withCopySuffix(title, n))) n += 1;
+  return withCopySuffix(title, n);
+}
+
 function makeEntry(title, device) {
   const d = new Date();
   const name = nowLabel() + '-' + crypto.randomBytes(2).toString('hex') + '-' + slugDevice(device) + '__' + title;
@@ -419,12 +433,18 @@ function persistMeta(u) {
   if (metaTimers.has(u.id)) return;
   metaTimers.set(u.id, setTimeout(function () {
     metaTimers.delete(u.id);
-    const rec = { id: u.id, name: u.name, kind: u.kind, size: u.size, device: u.device, fingerprint: u.fingerprint, created: u.created, parts: u.parts || {} };
+    const rec = { id: u.id, name: u.name, kind: u.kind, size: u.size, device: u.device, fingerprint: u.fingerprint, clientId: u.clientId || '', created: u.created, parts: u.parts || {} };
     fsp.writeFile(path.join(partDir(), u.id + '.json'), JSON.stringify(rec)).catch(function () {});
   }, 300));
 }
 
+function clearMetaTimer(id) {
+  const t = metaTimers.get(id);
+  if (t) { clearTimeout(t); metaTimers.delete(id); }
+}
+
 async function removeUpload(id) {
+  clearMetaTimer(id);
   const u = state.uploads.get(id);
   state.uploads.delete(id);
   try { await fsp.unlink(path.join(partDir(), id)); } catch (e) {}
@@ -479,11 +499,12 @@ async function apiInit(req, res) {
   const size = Number(body.size) || 0;
   const device = slugDevice(body.device || 'dev');
   const fingerprint = String(body.fingerprint || '');
+  const clientId = String(body.clientId || '');
   if (fingerprint) {
     for (const u of state.uploads.values()) {
-      if (u.fingerprint === fingerprint && u.kind === kind) {
-        return json(res, 200, { uploadId: u.id, offset: coveredBytes(u), kind: kind, resumed: true });
-      }
+      if (u.fingerprint !== fingerprint || u.kind !== kind) continue;
+      if (clientId && u.clientId && u.clientId !== clientId) continue;
+      return json(res, 200, { uploadId: u.id, offset: coveredBytes(u), kind: kind, resumed: true });
     }
   }
   const quota = (Number(config.totalQuotaGB) || 200) * 1024 * 1024 * 1024;
@@ -498,7 +519,7 @@ async function apiInit(req, res) {
   const id = crypto.randomUUID();
   await fsp.mkdir(partDir(), { recursive: true });
   await fsp.writeFile(path.join(partDir(), id), Buffer.alloc(0));
-  const meta = { id: id, name: title, kind: kind, size: size, device: device, fingerprint: fingerprint, created: Date.now(), parts: {} };
+  const meta = { id: id, name: title, kind: kind, size: size, device: device, fingerprint: fingerprint, clientId: clientId, created: Date.now(), parts: {} };
   await fsp.writeFile(path.join(partDir(), id + '.json'), JSON.stringify(meta));
   state.uploads.set(id, Object.assign({}, meta, { parts: {}, lastActive: Date.now() }));
   return json(res, 200, { uploadId: id, offset: 0, kind: kind });
@@ -549,8 +570,8 @@ async function apiFinish(req, res) {
     return json(res, 409, { error: 'incomplete', covered: covered, expected: total });
   }
   const size = st.size;
-  const title = sanitizeTitle(u.name);
   const kind = KINDS.indexOf(u.kind) >= 0 ? u.kind : 'file';
+  const title = uniqueTitle(kind, sanitizeTitle(u.name));
   let entry = makeEntry(title, u.device);
   const dir = kindDir(kind);
   await fsp.mkdir(dir, { recursive: true });
@@ -561,6 +582,7 @@ async function apiFinish(req, res) {
     target = path.join(dir, entry.name);
     tries += 1;
   }
+  clearMetaTimer(id);
   await fsp.rename(part, target);
   try { await fsp.unlink(path.join(partDir(), id + '.json')); } catch (e) {}
   state.uploads.delete(id);

@@ -542,6 +542,13 @@ function detectDevice(){
   }
   return d;
 }
+var CLIENT_ID = (function(){
+  try {
+    var v = sessionStorage.getItem("fh_cid");
+    if (!v) { v = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("fh_cid", v); }
+    return v;
+  } catch (e) { return "c" + Math.random().toString(36).slice(2); }
+})();
 function renderItem(it, animate, delay){
   var stick = nearBottom(600);
   var wrap = document.createElement("div");
@@ -667,6 +674,18 @@ function fileCard(it){
   });
   return card;
 }
+function uploadNodes(){
+  var arr = [];
+  Array.prototype.forEach.call(stream.children, function(n){ if (n.getAttribute("data-up")) arr.push(n); });
+  return arr;
+}
+function pinUploadNodes(){
+  var arr = uploadNodes();
+  if (!arr.length) return;
+  var atBottom = nearBottom(200);
+  arr.forEach(function(n){ stream.appendChild(n); });
+  if (atBottom) scrollToBottom();
+}
 function trimNodes(){
   while (stream.children.length > MAX_NODES) {
     var first = stream.firstChild;
@@ -684,6 +703,7 @@ function addItem(it, toBottom){
   var node = renderItem(it, true);
   nodeMap[it.key] = node;
   stream.appendChild(node);
+  pinUploadNodes();
   if (toBottom) scrollToBottom();
   trimNodes();
 }
@@ -726,12 +746,14 @@ function loadPage(){
     var list = (d.items || []).slice().reverse();
     if (S.items.length === 0) {
       list.forEach(function(it, i){ if (S.keys[it.key]) return; S.keys[it.key] = true; S.items.push(it); var nd = renderItem(it, true, Math.min(i, 10) * 32); nodeMap[it.key] = nd; stream.appendChild(nd); });
+      pinUploadNodes();
       scrollToBottom();
     } else {
       var before = stream.scrollHeight;
       var frag = document.createDocumentFragment();
       list.forEach(function(it){ if (S.keys[it.key]) return; S.keys[it.key] = true; S.items.unshift(it); var nd = renderItem(it); nodeMap[it.key] = nd; frag.insertBefore(nd, frag.firstChild); });
       stream.insertBefore(frag, stream.firstChild);
+      pinUploadNodes();
       stream.scrollTop += stream.scrollHeight - before;
     }
   });
@@ -797,7 +819,6 @@ function connect(){
 }
 document.addEventListener("visibilitychange", function(){
   if (document.hidden) return;
-  refreshList(false);
   if (!connEs || connEs.readyState !== 1) connect();
 });
 function updateMigrate(m){
@@ -928,7 +949,7 @@ function xhrPut(url, blob, onProgress, tries, reg){
 function uploadOne(file){
   var kind = kindOf(file);
   var fp = fingerprint(file);
-  return api("POST", "/api/upload/init", { name: file.name, kind: kind, size: file.size, device: S.device, fingerprint: fp }).then(function(r){
+  return api("POST", "/api/upload/init", { name: file.name, kind: kind, size: file.size, device: S.device, fingerprint: fp, clientId: CLIENT_ID }).then(function(r){
     if (!r.ok) {
       if (r.data && r.data.error === "quota_exceeded") throw new Error("超出总量上限 " + Math.round(r.data.quota / 1073741824) + " GB，请先清理旧文件");
       throw new Error(r.data && r.data.error === "no_space" ? "磁盘空间不足" : "初始化失败");
@@ -989,7 +1010,7 @@ function uploadOne(file){
       });
     }
     var jobs = [];
-    for (var i = 0; i < 3; i++) jobs.push(worker());
+    for (var i = 0; i < 5; i++) jobs.push(worker());
     return Promise.all(jobs).then(function(){
       if (aborted) return null;
       return api("POST", "/api/upload/finish", { uploadId: id });
@@ -997,6 +1018,7 @@ function uploadOne(file){
       if (aborted || !fr) return;
       if (tmp.node.parentNode) tmp.node.parentNode.removeChild(tmp.node);
       if (fr.ok && fr.data.item) addItem(fr.data.item, true);
+      else if (fr.status === 404) { toast("该文件已由其它窗口完成"); refreshList(true); }
       else toast("上传失败");
     }).catch(function(e){
       if (aborted) return;
@@ -1006,16 +1028,24 @@ function uploadOne(file){
   });
 }
 
+var activeFps = {};
 function pump(){
   while (running < 2 && queue.length){
-    var f = queue.shift();
-    running += 1;
-    uploadOne(f).catch(function(){}).then(function(){ running -= 1; pump(); });
+    (function(job){
+      running += 1;
+      uploadOne(job.file).catch(function(){}).then(function(){ running -= 1; delete activeFps[job.fp]; pump(); });
+    })(queue.shift());
   }
 }
 function enqueue(files){
   if (S.locked) { toast("正在迁移存储，暂不可发送"); return; }
-  for (var i = 0; i < files.length; i++) queue.push(files[i]);
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var fp = fingerprint(f);
+    if (activeFps[fp]) { toast("「" + f.name + "」已在上传，请勿重复添加"); continue; }
+    activeFps[fp] = true;
+    queue.push({ file: f, fp: fp });
+  }
   pump();
 }
 function pickHandler(ev){
